@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum CampaignStatus {
+  DRAFT
+  REVIEW
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum SubmissionStatus {
+  PENDING
+  REVIEW
+  APPROVED
+  REJECTED
+  PAUSED
+}
+
+enum RequirementStatus {
+  PASS
+  FAIL
+  NEEDS_REVIEW
+}
+
+model Campaign {
+  id                    Int             @id @default(autoincrement())
+  name                  String
+  brand                 String
+  description           String
+  platforms             String[]
+  creatorRequirements   String?
+  audienceRequirement   String?
+  minT1Audience         Int?
+  payoutRate            String?
+  totalBudget           String?
+  status                CampaignStatus  @default(REVIEW)
+  deadline              String?
+  creators              Int?
+  submissionCount       Int?
+  creatorCriteria       String?
+  submissionRequirements String?
+  creatorRoster         Json?
+  recentSubmissions     Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  submissions Submission[]
+  payouts     Payout[]
+}
+
+model Creator {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  username           String    @unique
+  avatar             String?
+  platforms          String[]
+  followers          Int?
+  averageEngagement  String?
+  t1Audience         String?
+  activeCampaigns    Int?      @default(0)
+  submissionStatus   String?
+  overallStatus      String?
+  audience           String?
+  campaignHistory    String[]
+  recentSubmissions  Json?
+  engagementMetrics  Json?
+  notes              String?
+  paymentInfo        Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  submissions Submission[]
+  payouts     Payout[]
+}
+
+model Submission {
+  id               Int                @id @default(autoincrement())
+  creatorId        Int
+  campaignId       Int
+  creatorName      String
+  campaignName     String
+  platform         String
+  submittedAt      String
+  postLink         String?
+  views            Int?
+  likes            Int?
+  comments         Int?
+  saves            Int?
+  requirementStatus Json
+  status           SubmissionStatus   @default(PENDING)
+  notes            String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  creator  Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model Payout {
+  id            Int      @id @default(autoincrement())
+  creatorId     Int
+  campaignId    Int?
+  creatorName   String
+  campaignName  String
+  amount        String
+  paymentMethod String
+  status        String   @default("Pending")
+  date          String
+  notes         String?
+  paymentHistory Json?
+  creatorInfo   Json?
+  paymentInfo   Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  creator  Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
