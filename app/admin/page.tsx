@@ -1,3 +1,5 @@
+"use client";
+
 export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[#f5f5f3] p-6 md:p-10">
