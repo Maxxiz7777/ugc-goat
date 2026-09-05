@@ -124,3 +124,17 @@ model Payout {
   creator  Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 }
+enum UserRole {
+  ADMIN
+  CREATOR
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(CREATOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
