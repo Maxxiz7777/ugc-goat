@@ -14,9 +14,14 @@ export default function AdminPage() {
             </p>
           </div>
 
-          <button className="bg-gray-900 text-white px-5 py-3 rounded-lg font-medium">
-            + Create Campaign
-          </button>
+          <button
+  onClick={() => window.location.href = "/admin/campaigns/new"}
+  className="bg-gray-900 text-white px-5 py-3 rounded-lg font-medium"
+>
+  + Create Campaign
+</button>
+            
+          
         </div>
 
         {/* Stats */}
