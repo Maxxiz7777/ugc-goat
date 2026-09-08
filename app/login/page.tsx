@@ -2,22 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const router = useRouter();
-
   const handleLogin = async () => {
-    if (!email) {
-      setError("Please enter your email");
+    setError("");
+
+    if (!email || !password) {
+      setError("Please enter your email and password.");
       return;
     }
 
     setLoading(true);
-    setError("");
 
     try {
       const response = await fetch("/api/login", {
@@ -27,13 +30,14 @@ export default function LoginPage() {
         },
         body: JSON.stringify({
           email,
+          password,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || "Something went wrong");
+        setError(data.error || "Invalid email or password.");
         setLoading(false);
         return;
       }
@@ -50,47 +54,114 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f5f5f3]">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Welcome to UGC GOAT
-        </h1>
+    <main className="min-h-screen bg-[#05070c] px-6 py-10 text-white">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-[-15%] top-[5%] h-[450px] w-[450px] rounded-full bg-violet-600/15 blur-[140px]" />
+        <div className="absolute right-[-15%] bottom-[5%] h-[450px] w-[450px] rounded-full bg-blue-600/10 blur-[140px]" />
+      </div>
 
-        <p className="text-gray-500 mt-2">
-          Sign in to access your dashboard.
-        </p>
+      <div className="relative mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
+        <div className="w-full">
 
-        <div className="mt-8">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Email address
-          </label>
+          <Link
+            href="/"
+            className="mb-8 flex items-center justify-center gap-3"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white font-black text-black">
+              G
+            </div>
 
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-gray-900"
-          />
-        </div>
+            <div>
+              <div className="text-lg font-bold">UGC GOAT</div>
+              <div className="text-[9px] uppercase tracking-[0.25em] text-white/30">
+                Creator Platform
+              </div>
+            </div>
+          </Link>
 
-        {error && (
-          <p className="text-red-500 text-sm mt-3">
-            {error}
+          <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-7 shadow-2xl backdrop-blur-xl sm:p-9">
+
+            <div className="text-center">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-indigo-300/70">
+                Welcome back
+              </div>
+
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+                Log in to UGC GOAT.
+              </h1>
+
+              <p className="mt-2 text-sm text-white/35">
+                Access your creator or admin dashboard.
+              </p>
+            </div>
+
+            <div className="mt-8 space-y-4">
+
+              <div>
+                <label className="mb-2 block text-xs font-medium text-white/55">
+                  Email address
+                </label>
+
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/20 focus:border-indigo-400/40 focus:bg-white/[0.04]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-medium text-white/55">
+                  Password
+                </label>
+
+                <input
+                  type="password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleLogin();
+                    }
+                  }}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/20 focus:border-indigo-400/40 focus:bg-white/[0.04]"
+                />
+              </div>
+
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-xl border border-red-400/15 bg-red-400/5 px-4 py-3 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleLogin}
+              disabled={loading}
+              className="mt-6 w-full rounded-xl bg-white py-3.5 text-sm font-semibold text-black transition hover:-translate-y-0.5 hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? "Signing in..." : "Continue →"}
+            </button>
+
+            <div className="mt-6 text-center text-sm text-white/30">
+              Don't have an account?{" "}
+              <Link
+                href="/signup"
+                className="font-medium text-white/70 transition hover:text-white"
+              >
+                Join as a Creator
+              </Link>
+            </div>
+          </div>
+
+          <p className="mt-6 text-center text-[10px] text-white/20">
+            UGC GOAT Creator Platform
           </p>
-        )}
 
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          className="w-full bg-gray-900 text-white rounded-lg py-3 mt-6 font-medium hover:bg-gray-800 disabled:opacity-50"
-        >
-          {loading ? "Signing in..." : "Continue"}
-        </button>
-
-        <p className="text-center text-sm text-gray-400 mt-6">
-          UGC GOAT Creator Platform
-        </p>
+        </div>
       </div>
     </main>
   );
