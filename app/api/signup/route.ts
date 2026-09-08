@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { randomBytes, scrypt } from "crypto";
 import { promisify } from "util";
+import { createSession } from "@/lib/session";
+
 const scryptAsync = promisify(scrypt);
+
 export async function POST(request: Request) {
   try {
     const { name, username, email, password } = await request.json();
@@ -22,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: email.trim() },
     });
 
     if (existingUser) {
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     const existingCreator = await prisma.creator.findUnique({
-      where: { username },
+      where: { username: username.trim() },
     });
 
     if (existingCreator) {
@@ -45,14 +48,18 @@ export async function POST(request: Request) {
 
     const salt = randomBytes(16).toString("hex");
 
-const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
+    const derivedKey = (await scryptAsync(
+      password,
+      salt,
+      64
+    )) as Buffer;
 
-const passwordHash = `${salt}:${derivedKey.toString("hex")}`;
+    const passwordHash = `${salt}:${derivedKey.toString("hex")}`;
 
     const user = await prisma.user.create({
       data: {
-        email,
-        name,
+        email: email.trim(),
+        name: name.trim(),
         passwordHash,
         role: "CREATOR",
       },
@@ -61,17 +68,29 @@ const passwordHash = `${salt}:${derivedKey.toString("hex")}`;
     await prisma.creator.create({
       data: {
         userId: user.id,
-        name,
-        username,
+        name: name.trim(),
+        username: username.trim(),
         platforms: [],
         followers: 0,
       },
     });
 
-    return NextResponse.json({
+    const sessionToken = await createSession(user.id, user.role);
+
+    const response = NextResponse.json({
       success: true,
       message: "Creator account created successfully.",
     });
+
+    response.cookies.set("session", sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+    });
+
+    return response;
   } catch (error) {
     console.error("Signup error:", error);
 
