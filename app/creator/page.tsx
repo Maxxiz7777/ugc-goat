@@ -2,17 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Creator = {
+type CreatorProfile = {
+  name: string;
+  username: string;
+  avatar: string | null;
+  platforms: string[];
+  followers: number;
+  averageEngagement?: number | null;
+  t1Audience?: number | null;
+  activeCampaigns?: number;
+  recentSubmissions?: unknown[] | null;
+  earnings?: number | null;
+};
+
+type MeResponse = {
+  id: number;
   name: string | null;
   email: string;
   role: string;
-  creator: {
-    name: string;
-    username: string;
-    avatar: string | null;
-    platforms: string[];
-    followers: number;
-  } | null;
+  creator: CreatorProfile | null;
 };
 
 type Campaign = {
@@ -21,644 +29,965 @@ type Campaign = {
   brand: string;
   description: string;
   platforms: string[];
-  payoutRate: string;
-  totalBudget: string;
-  deadline: string;
-  status: string;
-  minT1Audience: number;
-  creatorCriteria?: string;
-  submissionRequirements?: string;
+  creatorRequirements?: string | null;
+  audienceRequirement?: string | null;
+  minT1Audience?: number | null;
+  payoutRate?: string | number | null;
+  totalBudget?: string | number | null;
+  status?: string | null;
+  deadline?: string | null;
+  creators?: number | null;
+  submissionCount?: number | null;
+  creatorCriteria?: string | null;
+  submissionRequirements?: string | null;
 };
 
-const navigation = [
-  "Discover Campaigns",
-  "My Campaigns",
-  "My Submissions",
-  "Earnings",
-  "Profile",
+const platformFilters = [
+  "All",
+  "Instagram",
+  "TikTok",
+  "YouTube",
 ];
 
-const fallbackCampaigns: Campaign[] = [
-  {
-    id: 1,
-    name: "PSL App Campaign",
-    brand: "PSL",
-    description:
-      "Drive app downloads and product education through short-form lifestyle storytelling.",
-    platforms: ["Instagram Reels", "TikTok"],
-    payoutRate: "$1,200 / creator",
-    totalBudget: "$18,500",
-    deadline: "Sep 18, 2026",
-    status: "Active",
-    minT1Audience: 70,
-    creatorCriteria: "Beauty, skincare, and wellness creators",
-    submissionRequirements: "3 short-form videos and 1 story mention",
-  },
-  {
-    id: 2,
-    name: "Symmetrix Promotion",
-    brand: "Symmetrix",
-    description:
-      "Create trend-led short-form content designed to build product awareness.",
-    platforms: ["TikTok", "Instagram Reels"],
-    payoutRate: "$900 / creator",
-    totalBudget: "$12,000",
-    deadline: "Sep 24, 2026",
-    status: "Active",
-    minT1Audience: 60,
-    creatorCriteria: "Lifestyle, fashion, and product-review creators",
-    submissionRequirements: "2 short-form videos",
-  },
-];
+function formatNumber(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  return value.toLocaleString();
+}
+
+function formatMoney(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  const number = Number(value);
+
+  if (Number.isFinite(number)) {
+    return `$${number.toLocaleString()}`;
+  }
+
+  return String(value);
+}
+
+function formatDeadline(deadline: string | null | undefined) {
+  if (!deadline) return "No deadline";
+
+  const date = new Date(deadline);
+
+  if (Number.isNaN(date.getTime())) {
+    return deadline;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getProgress(campaign: Campaign) {
+  const budget = Number(campaign.totalBudget);
+  const payout = Number(campaign.payoutRate);
+
+  if (
+    !Number.isFinite(budget) ||
+    !Number.isFinite(payout) ||
+    budget <= 0
+  ) {
+    return null;
+  }
+
+  return Math.min(
+    100,
+    Math.max(0, (payout / budget) * 100)
+  );
+}
+
+function campaignMatchesPlatform(
+  campaign: Campaign,
+  filter: string
+) {
+  if (filter === "All") return true;
+
+  return campaign.platforms?.some((platform) =>
+    platform
+      .toLowerCase()
+      .includes(filter.toLowerCase())
+  );
+}
 
 export default function CreatorPage() {
-  const [activeTab, setActiveTab] = useState("Discover Campaigns");
-
-  const [creator, setCreator] = useState<Creator | null>(null);
-  const [creatorLoading, setCreatorLoading] = useState(true);
-
-  const [campaigns, setCampaigns] =
-    useState<Campaign[]>(fallbackCampaigns);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaign, setSelectedCampaign] =
+    useState<Campaign | null>(null);
 
   const [search, setSearch] = useState("");
+  const [platformFilter, setPlatformFilter] =
+    useState("All");
 
-  const [selectedCampaign, setSelectedCampaign] =
-    useState<Campaign | null>(fallbackCampaigns[0]);
+  const [applicationStatuses, setApplicationStatuses] = useState<
+  Record<number, string>
+>({});
 
-  const [appliedIds, setAppliedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function loadCreator() {
+    async function loadCreatorData() {
       try {
-        const response = await fetch("/api/me");
+        setLoading(true);
+        setError("");
 
-        if (!response.ok) {
-          throw new Error("Failed to load creator");
+        const [meResponse, campaignsResponse] =
+          await Promise.all([
+            fetch("/api/me"),
+            fetch("/api/campaigns"),
+          ]);
+
+        if (!meResponse.ok) {
+          throw new Error("Unable to load your account.");
         }
 
-        const data = await response.json();
-
-        setCreator(data);
-      } catch (error) {
-        console.error("Failed to load creator:", error);
-      } finally {
-        setCreatorLoading(false);
-      }
-    }
-
-    loadCreator();
-  }, []);
-
-  useEffect(() => {
-    async function loadCampaigns() {
-      try {
-        const response = await fetch("/api/campaigns");
-
-        if (!response.ok) {
-          throw new Error("Failed to load campaigns");
+        if (!campaignsResponse.ok) {
+          throw new Error("Unable to load campaigns.");
         }
 
-        const data = await response.json();
+        const meData = await meResponse.json();
+        const campaignsData =
+          await campaignsResponse.json();
 
-        if (Array.isArray(data) && data.length > 0) {
-          setCampaigns(data);
-          setSelectedCampaign(data[0]);
-        } else if (
-          Array.isArray(data.campaigns) &&
-          data.campaigns.length > 0
-        ) {
-          setCampaigns(data.campaigns);
-          setSelectedCampaign(data.campaigns[0]);
+        setMe(meData);
+
+        const campaignList = Array.isArray(campaignsData)
+          ? campaignsData
+          : campaignsData.campaigns || [];
+
+        setCampaigns(campaignList);
+
+        if (campaignList.length > 0) {
+          setSelectedCampaign(campaignList[0]);
         }
-      } catch {
-        // Keep the fallback campaigns.
+      } catch (err) {
+        console.error(err);
+        setError(
+          "We couldn't load your creator dashboard."
+        );
       } finally {
         setLoading(false);
       }
     }
 
-    loadCampaigns();
+    loadCreatorData();
   }, []);
+
+  const creator = me?.creator;
+
+  const creatorName =
+    creator?.name ||
+    me?.name ||
+    "Creator";
+
+  const username =
+    creator?.username || "";
+
+  const initials =
+    creatorName.charAt(0).toUpperCase();
+
+  const followers =
+    creator?.followers ?? 0;
+
+  const platforms =
+    creator?.platforms ?? [];
 
   const filteredCampaigns = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    if (!query) return campaigns;
+    return campaigns.filter((campaign) => {
+      const matchesSearch =
+        !query ||
+        campaign.name
+          ?.toLowerCase()
+          .includes(query) ||
+        campaign.brand
+          ?.toLowerCase()
+          .includes(query) ||
+        campaign.description
+          ?.toLowerCase()
+          .includes(query);
 
-    return campaigns.filter(
-      (campaign) =>
-        campaign.name.toLowerCase().includes(query) ||
-        campaign.brand.toLowerCase().includes(query) ||
-        campaign.description.toLowerCase().includes(query)
-    );
-  }, [campaigns, search]);
+      return (
+        matchesSearch &&
+        campaignMatchesPlatform(
+          campaign,
+          platformFilter
+        )
+      );
+    });
+  }, [
+    campaigns,
+    search,
+    platformFilter,
+  ]);
+useEffect(() => {
+  async function loadApplications() {
+    try {
+      const response = await fetch("/api/applications");
 
-  function handleApply(id: number) {
-    setAppliedIds((current) =>
-      current.includes(id) ? current : [...current, id]
-    );
+      if (!response.ok) {
+        return;
+      }
+
+      const applications = await response.json();
+
+      const statuses: Record<number, string> = {};
+
+      for (const application of applications) {
+        statuses[application.campaignId] = application.status;
+      }
+
+      setApplicationStatuses(statuses);
+    } catch (error) {
+      console.error("Failed to load applications:", error);
+    }
   }
 
-  const creatorName =
-    creator?.creator?.name ||
-    creator?.name ||
-    "Creator";
+  loadApplications();
+}, []);
+  async function handleJoin(campaignId: number) {
+  try {
+    const response = await fetch("/api/applications", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        campaignId,
+      }),
+    });
 
-  const creatorUsername =
-    creator?.creator?.username || "";
+    const data = await response.json();
 
-  const creatorEmail =
-    creator?.email || "";
+    if (!response.ok) {
+      alert(data.error || "Failed to apply to campaign.");
+      return;
+    }
 
-  const creatorFollowers =
-    creator?.creator?.followers ?? 0;
+    setApplicationStatuses((current) => ({
+      ...current,
+      [campaignId]: "PENDING",
+    }));
+  } catch (error) {
+    console.error("Apply error:", error);
+    alert("Something went wrong. Please try again.");
+  }
+}
 
-  const creatorInitial =
-    creatorName.charAt(0).toUpperCase() || "C";
 
   return (
-    <main className="min-h-screen bg-[#f5f5f3] text-slate-900">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
-          <div>
-            <p className="text-lg font-bold tracking-tight">
-              UGC GOAT
-            </p>
+    <main className="min-h-screen bg-[#070708] text-white">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-[-180px] top-[-180px] h-[420px] w-[420px] rounded-full bg-violet-600/[0.08] blur-[140px]" />
+        <div className="absolute right-[-180px] top-[35%] h-[420px] w-[420px] rounded-full bg-indigo-500/[0.06] blur-[140px]" />
+      </div>
 
-            <p className="text-xs text-slate-500">
-              Creator platform
-            </p>
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#09090a]/85 backdrop-blur-2xl">
+        <div className="mx-auto flex h-[72px] max-w-[1450px] items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-black shadow-lg shadow-white/5">
+              G
+            </div>
+
+            <div>
+              <div className="text-[15px] font-bold tracking-tight">
+                UGC GOAT
+              </div>
+
+              <div className="text-[9px] uppercase tracking-[0.28em] text-white/25">
+                Creator Network
+              </div>
+            </div>
           </div>
+
+          <nav className="hidden items-center gap-8 text-sm text-white/40 md:flex">
+            <button className="text-white">
+              Explore
+            </button>
+
+            <button className="transition hover:text-white">
+              My Campaigns
+            </button>
+
+            <button className="transition hover:text-white">
+              Submissions
+            </button>
+
+            <button className="transition hover:text-white">
+              Earnings
+            </button>
+          </nav>
 
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium">
-                {creatorLoading ? "Loading..." : creatorName}
-              </p>
+              <div className="text-sm font-medium">
+                {creatorName}
+              </div>
 
-              <p className="text-xs text-slate-500">
-                {creatorUsername
-                  ? `@${creatorUsername}`
-                  : "Creator account"}
-              </p>
+              <div className="text-[11px] text-white/30">
+                {username
+                  ? `@${username}`
+                  : "Creator"}
+              </div>
             </div>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-              {creatorInitial}
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white text-sm font-bold text-black">
+              {initials}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-5 py-8">
-        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Creator portal
-          </p>
-
-          <div className="mt-2 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div className="relative mx-auto max-w-[1450px] px-6 py-10">
+        {/* Hero */}
+        <section className="mb-10">
+          <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
             <div>
-              <h1 className="text-3xl font-semibold tracking-[-0.05em]">
-                Welcome back{creatorName !== "Creator" ? `, ${creatorName}` : ""}.
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-400/15 bg-violet-400/[0.06] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
+                Creator marketplace
+              </div>
+
+              <h1 className="max-w-3xl text-4xl font-bold tracking-[-0.045em] sm:text-5xl lg:text-6xl">
+                Find campaigns
+                <br />
+                worth creating for.
               </h1>
 
-              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                Discover campaigns, join opportunities, submit your content,
-                and track your earnings.
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-white/40 sm:text-base">
+                Discover paid opportunities matched to
+                your platforms and audience. Create,
+                submit, and get paid.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Campaigns
-                </p>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5 shadow-2xl shadow-black/20 lg:min-w-[260px]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-white/30">
+                  Your profile
+                </span>
 
-                <p className="mt-1 text-lg font-semibold">
-                  {campaigns.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Joined
-                </p>
-
-                <p className="mt-1 text-lg font-semibold">
-                  {appliedIds.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Status
-                </p>
-
-                <p className="mt-1 text-lg font-semibold">
+                <span className="rounded-full border border-emerald-400/15 bg-emerald-400/[0.07] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-emerald-400">
                   Active
-                </p>
+                </span>
+              </div>
+
+              <div className="mt-5 flex items-end justify-between">
+                <div>
+                  <div className="text-2xl font-bold">
+                    {formatNumber(followers)}
+                  </div>
+
+                  <div className="mt-1 text-[11px] text-white/30">
+                    total followers
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-2xl font-bold">
+                    {campaigns.length}
+                  </div>
+
+                  <div className="mt-1 text-[11px] text-white/30">
+                    live campaigns
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        <nav className="mb-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1">
-          <div className="flex min-w-max gap-1">
-            {navigation.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setActiveTab(item)}
-                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                  activeTab === item
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                {item}
-              </button>
-            ))}
+        {/* Account stats */}
+        <section className="mb-10 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition hover:border-white/[0.13] hover:bg-white/[0.035]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/25">
+                Followers
+              </span>
+
+              <span className="text-white/20">
+                ◉
+              </span>
+            </div>
+
+            <div className="mt-5 text-2xl font-bold tracking-tight">
+              {formatNumber(followers)}
+            </div>
+
+            <div className="mt-1 text-xs text-white/25">
+              Connected account
+            </div>
           </div>
-        </nav>
 
-        {activeTab === "Discover Campaigns" && (
-          <div className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr]">
-            <section className="rounded-2xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 p-5">
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Discover
-                    </p>
+          <div className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition hover:border-white/[0.13] hover:bg-white/[0.035]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/25">
+                T1 Audience
+              </span>
 
-                    <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
-                      Available campaigns
-                    </h2>
-                  </div>
+              <span className="text-white/20">
+                ◎
+              </span>
+            </div>
 
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
-                    {loading
-                      ? "Loading..."
-                      : `${filteredCampaigns.length} live`}
-                  </span>
-                </div>
+            <div className="mt-5 text-2xl font-bold tracking-tight">
+              {creator?.t1Audience != null
+                ? `${creator.t1Audience}%`
+                : "Not connected"}
+            </div>
 
-                <input
-                  type="text"
-                  placeholder="Search campaigns or brands..."
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="mt-5 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
-                />
+            <div className="mt-1 text-xs text-white/25">
+              Audience quality
+            </div>
+          </div>
+
+          <div className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition hover:border-white/[0.13] hover:bg-white/[0.035]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/25">
+                Engagement
+              </span>
+
+              <span className="text-white/20">
+                ↗
+              </span>
+            </div>
+
+            <div className="mt-5 text-2xl font-bold tracking-tight">
+              {creator?.averageEngagement != null
+                ? `${creator.averageEngagement}%`
+                : "Not connected"}
+            </div>
+
+            <div className="mt-1 text-xs text-white/25">
+              Average engagement
+            </div>
+          </div>
+
+          <div className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition hover:border-white/[0.13] hover:bg-white/[0.035]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/25">
+                Platforms
+              </span>
+
+              <span className="text-white/20">
+                ◆
+              </span>
+            </div>
+
+            <div className="mt-5 text-2xl font-bold tracking-tight">
+              {platforms.length || 0}
+            </div>
+
+            <div className="mt-1 text-xs text-white/25">
+              {platforms.length
+                ? platforms.join(" · ")
+                : "Connect your accounts"}
+            </div>
+          </div>
+        </section>
+
+        {/* Marketplace heading */}
+        <section>
+          <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/25">
+                Opportunities
               </div>
 
-              <div className="space-y-3 p-4">
-                {filteredCampaigns.map((campaign) => {
-                  const applied = appliedIds.includes(campaign.id);
-                  const selected =
-                    selectedCampaign?.id === campaign.id;
+              <h2 className="mt-2 text-2xl font-bold tracking-tight">
+                Campaigns for you
+              </h2>
 
-                  return (
-                    <div
-                      key={campaign.id}
-                      onClick={() => setSelectedCampaign(campaign)}
-                      className={`cursor-pointer rounded-2xl border p-4 transition ${
-                        selected
-                          ? "border-slate-400 bg-slate-50"
-                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="font-semibold tracking-tight">
-                            {campaign.name}
-                          </h3>
+              <p className="mt-1 text-sm text-white/30">
+                {loading
+                  ? "Finding available opportunities..."
+                  : `${filteredCampaigns.length} opportunities available`}
+              </p>
+            </div>
+          </div>
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            {campaign.brand}
-                          </p>
+          {/* Search + filters */}
+          <div className="mb-7 flex flex-col gap-3 lg:flex-row">
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg text-white/20">
+                ⌕
+              </span>
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search campaigns, brands or categories..."
+                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.025] py-3.5 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-white/20 focus:border-violet-400/30 focus:bg-white/[0.04]"
+              />
+            </div>
+
+            <div className="flex overflow-x-auto rounded-xl border border-white/[0.08] bg-white/[0.02] p-1">
+              {platformFilters.map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() =>
+                    setPlatformFilter(filter)
+                  }
+                  className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-xs font-medium transition ${
+                    platformFilter === filter
+                      ? "bg-white text-black shadow-lg"
+                      : "text-white/35 hover:text-white"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Campaign cards */}
+          {error && (
+            <div className="mb-6 rounded-2xl border border-red-400/15 bg-red-400/[0.06] p-4 text-sm text-red-300">
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredCampaigns.map((campaign) => {
+              const progress =
+                getProgress(campaign);
+
+              const applicationStatus =
+                applicationStatuses[campaign.id];
+
+              return (
+                <article
+                  key={campaign.id}
+                  onClick={() =>
+                    setSelectedCampaign(campaign)
+                  }
+                  className="group cursor-pointer overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111112] transition duration-300 hover:-translate-y-1 hover:border-violet-400/25 hover:bg-[#151516] hover:shadow-2xl hover:shadow-violet-950/20"
+                >
+                  <div className="p-5">
+                    {/* Brand */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-gradient-to-br from-violet-500/20 via-indigo-500/10 to-white/[0.03] text-lg font-bold">
+                          {campaign.brand
+                            ?.charAt(0)
+                            .toUpperCase() || "U"}
                         </div>
 
-                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                          {campaign.status}
-                        </span>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-[0.15em] text-white/25">
+                            {campaign.brand}
+                          </div>
+
+                          <h3 className="mt-1 truncate text-[15px] font-semibold">
+                            {campaign.name}
+                          </h3>
+                        </div>
                       </div>
 
-                      <p className="mt-3 text-sm leading-6 text-slate-600">
-                        {campaign.description}
-                      </p>
+                      <div className="shrink-0 rounded-full border border-emerald-400/10 bg-emerald-400/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                        {campaign.status || "Active"}
+                      </div>
+                    </div>
 
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {campaign.platforms.map((platform) => (
+                    {/* Description */}
+                    <p className="mt-5 line-clamp-2 text-sm leading-6 text-white/40">
+                      {campaign.description}
+                    </p>
+
+                    {/* Platforms */}
+                    <div className="mt-5 flex flex-wrap gap-1.5">
+                      {campaign.platforms?.map(
+                        (platform) => (
                           <span
                             key={platform}
-                            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600"
+                            className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1 text-[10px] text-white/40"
                           >
                             {platform}
                           </span>
-                        ))}
-                      </div>
-
-                      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">
-                            Payout
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold">
-                            {campaign.payoutRate}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">
-                            Budget
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold">
-                            {campaign.totalBudget}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">
-                            Deadline
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold">
-                            {campaign.deadline}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-xs text-slate-500">
-                          T1 audience: {campaign.minT1Audience}%+
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleApply(campaign.id);
-                          }}
-                          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                            applied
-                              ? "border border-slate-200 bg-white text-slate-700"
-                              : "bg-slate-900 text-white hover:bg-slate-700"
-                          }`}
-                        >
-                          {applied ? "Applied" : "Apply / Join"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5">
-              {selectedCampaign ? (
-                <>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Campaign brief
-                  </p>
-
-                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                    {selectedCampaign.name}
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    {selectedCampaign.brand}
-                  </p>
-
-                  <div className="mt-5 rounded-xl bg-slate-50 p-4">
-                    <p className="text-sm leading-6 text-slate-600">
-                      {selectedCampaign.description}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 space-y-3">
-                    <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">
-                        Platforms
-                      </span>
-
-                      <span className="text-right font-medium">
-                        {selectedCampaign.platforms.join(", ")}
-                      </span>
+                        )
+                      )}
                     </div>
 
-                    <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">
-                        Payout
-                      </span>
-
-                      <span className="font-medium">
-                        {selectedCampaign.payoutRate}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">
-                        T1 requirement
-                      </span>
-
-                      <span className="font-medium">
-                        {selectedCampaign.minT1Audience}%+
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">
-                        Deadline
-                      </span>
-
-                      <span className="font-medium">
-                        {selectedCampaign.deadline}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleApply(selectedCampaign.id)
-                    }
-                    className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-700"
-                  >
-                    {appliedIds.includes(selectedCampaign.id)
-                      ? "Already Applied"
-                      : "Apply to Campaign"}
-                  </button>
-                </>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Select a campaign to view its brief.
-                </p>
-              )}
-            </aside>
-          </div>
-        )}
-
-        {activeTab === "My Campaigns" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              My campaigns
-            </p>
-
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
-              Campaigns you joined
-            </h2>
-
-            <div className="mt-5 space-y-3">
-              {appliedIds.length === 0 ? (
-                <div className="rounded-xl bg-slate-50 p-6 text-center">
-                  <p className="font-medium">
-                    No campaigns joined yet.
-                  </p>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Discover a campaign and apply to get started.
-                  </p>
-                </div>
-              ) : (
-                campaigns
-                  .filter((campaign) =>
-                    appliedIds.includes(campaign.id)
-                  )
-                  .map((campaign) => (
-                    <div
-                      key={campaign.id}
-                      className="rounded-xl border border-slate-200 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
+                    {/* Payout */}
+                    <div className="mt-5 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                      <div className="flex items-end justify-between">
                         <div>
-                          <h3 className="font-semibold">
-                            {campaign.name}
-                          </h3>
+                          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/20">
+                            Creator payout
+                          </div>
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            {campaign.brand}
-                          </p>
+                          <div className="mt-1 text-xl font-bold">
+                            {formatMoney(
+                              campaign.payoutRate
+                            )}
+                          </div>
                         </div>
 
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                          Joined
-                        </span>
+                        <div className="text-right">
+                          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/20">
+                            Budget
+                          </div>
+
+                          <div className="mt-1 text-sm font-semibold text-white/60">
+                            {formatMoney(
+                              campaign.totalBudget
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  ))
-              )}
-            </div>
-          </section>
-        )}
 
-        {activeTab === "My Submissions" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              My submissions
-            </p>
+                    {/* Progress */}
+                    {progress !== null && (
+                      <div className="mt-5">
+                        <div className="mb-2 flex justify-between text-[9px] uppercase tracking-[0.12em] text-white/20">
+                          <span>Campaign capacity</span>
+                          <span>
+                            {Math.round(progress)}%
+                          </span>
+                        </div>
 
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
-              Submission history
-            </h2>
+                        <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-400"
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
 
-            <div className="mt-6 rounded-xl bg-slate-50 p-8 text-center">
-              <p className="font-medium">
-                No submissions yet
-              </p>
+                    {/* Footer */}
+                    <div className="mt-5 flex items-center justify-between border-t border-white/[0.06] pt-4">
+                      <div>
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-white/20">
+                          Deadline
+                        </div>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Your submitted campaign content will appear here.
-              </p>
-            </div>
-          </section>
-        )}
+                        <div className="mt-1 text-xs font-medium text-white/55">
+                          {formatDeadline(
+                            campaign.deadline
+                          )}
+                        </div>
+                      </div>
 
-        {activeTab === "Earnings" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Earnings
-            </p>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedCampaign(campaign);
+                        }}
+                        className={`rounded-lg px-3.5 py-2 text-[11px] font-semibold transition ${
+                          applicationStatus
+                            ? "border border-white/10 bg-white/[0.04] text-white/45"
+                            : "bg-white text-black hover:bg-white/90"
+                        }`}
+                      >
+                        {applicationStatus === "PENDING"
+                          ? "Application pending"
+                          : applicationStatus === "APPROVED"
+                          ? "Joined"
+                          : applicationStatus === "REJECTED"
+                          ? "Application rejected"
+                          : "View opportunity"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
 
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
-              Your earnings
-            </h2>
+          {!loading &&
+            filteredCampaigns.length === 0 && (
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] px-6 py-20 text-center">
+                <div className="text-3xl text-white/20">
+                  ⌕
+                </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">
-                  Total earned
-                </p>
-
-                <p className="mt-2 text-3xl font-semibold">
-                  $0
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">
-                  Pending
-                </p>
-
-                <p className="mt-2 text-3xl font-semibold">
-                  $0
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">
-                  Paid
-                </p>
-
-                <p className="mt-2 text-3xl font-semibold">
-                  $0
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === "Profile" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Profile
-            </p>
-
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
-              Creator profile
-            </h2>
-
-            <div className="mt-6 flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-xl font-semibold text-white">
-                {creatorInitial}
-              </div>
-
-              <div>
-                <h3 className="font-semibold">
-                  {creatorName}
+                <h3 className="mt-4 text-lg font-semibold">
+                  No opportunities found
                 </h3>
 
-                <p className="text-sm text-slate-500">
-                  {creatorUsername
-                    ? `@${creatorUsername}`
-                    : "Creator account"}
+                <p className="mt-2 text-sm text-white/30">
+                  Try another search or platform.
                 </p>
+              </div>
+            )}
+        </section>
+      </div>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  {creatorEmail}
-                </p>
+      {/* Campaign detail */}
+      {selectedCampaign && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-6"
+          onClick={() =>
+            setSelectedCampaign(null)
+          }
+        >
+          <div
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+            className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#101011] shadow-[0_30px_100px_rgba(0,0,0,0.7)] sm:rounded-3xl"
+          >
+            {/* Modal header */}
+            <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#101011]/95 px-6 py-5 backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-5">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-violet-500/20 to-indigo-500/10 text-xl font-bold">
+                    {selectedCampaign.brand
+                      ?.charAt(0)
+                      .toUpperCase() || "U"}
+                  </div>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  {creatorFollowers.toLocaleString()} followers
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/25">
+                      {selectedCampaign.brand}
+                    </div>
+
+                    <h2 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+                      {selectedCampaign.name}
+                    </h2>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedCampaign(null)
+                  }
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-lg text-white/40 transition hover:bg-white/[0.07] hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Main payout */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-violet-400/10 bg-violet-400/[0.04] p-5">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-violet-300/50">
+                    Creator payout
+                  </div>
+
+                  <div className="mt-2 text-3xl font-bold">
+                    {formatMoney(
+                      selectedCampaign.payoutRate
+                    )}
+                  </div>
+
+                  <div className="mt-1 text-xs text-white/25">
+                    campaign payout
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/25">
+                    Campaign budget
+                  </div>
+
+                  <div className="mt-2 text-3xl font-bold">
+                    {formatMoney(
+                      selectedCampaign.totalBudget
+                    )}
+                  </div>
+
+                  <div className="mt-1 text-xs text-white/25">
+                    available campaign budget
+                  </div>
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-white/[0.025] p-4">
+                  <div className="text-[9px] uppercase tracking-[0.15em] text-white/20">
+                    Platforms
+                  </div>
+
+                  <div className="mt-2 text-xs font-medium text-white/60">
+                    {selectedCampaign.platforms?.join(
+                      " · "
+                    ) || "—"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/[0.025] p-4">
+                  <div className="text-[9px] uppercase tracking-[0.15em] text-white/20">
+                    T1 requirement
+                  </div>
+
+                  <div className="mt-2 text-xs font-medium text-white/60">
+                    {selectedCampaign.minT1Audience != null
+                      ? `${selectedCampaign.minT1Audience}%+`
+                      : "Not specified"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/[0.025] p-4">
+                  <div className="text-[9px] uppercase tracking-[0.15em] text-white/20">
+                    Deadline
+                  </div>
+
+                  <div className="mt-2 text-xs font-medium text-white/60">
+                    {formatDeadline(
+                      selectedCampaign.deadline
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/[0.025] p-4">
+                  <div className="text-[9px] uppercase tracking-[0.15em] text-white/20">
+                    Status
+                  </div>
+
+                  <div className="mt-2 text-xs font-medium text-emerald-400">
+                    {selectedCampaign.status ||
+                      "Active"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Brief */}
+              <div className="mt-8">
+                <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/25">
+                  Campaign brief
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                  <p className="whitespace-pre-line text-sm leading-7 text-white/55">
+                    {selectedCampaign.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Requirements */}
+              <div className="mt-8">
+                <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/25">
+                  Requirements
+                </div>
+
+                <div className="space-y-3">
+                  {selectedCampaign.creatorRequirements && (
+                    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                      <div className="text-xs font-semibold text-white/70">
+                        Creator requirements
+                      </div>
+
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/45">
+                        {
+                          selectedCampaign.creatorRequirements
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedCampaign.creatorCriteria && (
+                    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                      <div className="text-xs font-semibold text-white/70">
+                        Creator criteria
+                      </div>
+
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/45">
+                        {
+                          selectedCampaign.creatorCriteria
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedCampaign.audienceRequirement && (
+                    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                      <div className="text-xs font-semibold text-white/70">
+                        Audience requirement
+                      </div>
+
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/45">
+                        {
+                          selectedCampaign.audienceRequirement
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedCampaign.submissionRequirements && (
+                    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                      <div className="text-xs font-semibold text-white/70">
+                        Submission requirements
+                      </div>
+
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/45">
+                        {
+                          selectedCampaign.submissionRequirements
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {!selectedCampaign.creatorRequirements &&
+                    !selectedCampaign.creatorCriteria &&
+                    !selectedCampaign.audienceRequirement &&
+                    !selectedCampaign.submissionRequirements && (
+                      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 text-sm text-white/30">
+                        No additional requirements
+                        provided.
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              {/* Join */}
+              <div className="mt-8 border-t border-white/[0.07] pt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const status =
+                      applicationStatuses[selectedCampaign.id];
+
+                    if (!status) {
+                      handleJoin(selectedCampaign.id);
+                    }
+                  }}
+                  className={`w-full rounded-xl py-4 text-sm font-bold transition ${
+                    applicationStatuses[selectedCampaign.id]
+                      ? "border border-white/10 bg-white/[0.04] text-white/50"
+                      : "bg-white text-black hover:-translate-y-0.5 hover:bg-white/90"
+                  }`}
+                >
+                  {applicationStatuses[selectedCampaign.id] === "PENDING"
+                    ? "Application Pending"
+                    : applicationStatuses[selectedCampaign.id] === "APPROVED"
+                    ? "✓ Joined Campaign"
+                    : applicationStatuses[selectedCampaign.id] === "REJECTED"
+                    ? "Application Rejected"
+                    : "Apply / Join Campaign"}
+                </button>
+
+                <p className="mt-3 text-center text-[10px] text-white/20">
+                  Applications will be connected to your
+                  creator account in the next step.
                 </p>
               </div>
             </div>
-          </section>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
