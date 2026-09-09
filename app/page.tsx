@@ -248,7 +248,7 @@ export default function Home() {
 
             <div className="mt-10 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/creator"
+                href="/signup"
                 className="group relative overflow-hidden rounded-xl bg-white px-7 py-4 text-center text-sm font-semibold text-black shadow-[0_10px_40px_rgba(255,255,255,.08)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_15px_50px_rgba(255,255,255,.14)]"
               >
                 <span className="relative z-10">
