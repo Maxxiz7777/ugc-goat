@@ -214,7 +214,7 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/creator"
+            href="/signup"
             className="hidden rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition duration-300 hover:-translate-y-0.5 hover:bg-white/90 sm:block"
           >
             Join as a Creator →
