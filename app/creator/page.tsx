@@ -2,6 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+type Creator = {
+  name: string | null;
+  email: string;
+  role: string;
+  creator: {
+    name: string;
+    username: string;
+    avatar: string | null;
+    platforms: string[];
+    followers: number;
+  } | null;
+};
+
 type Campaign = {
   id: number;
   name: string;
@@ -60,13 +73,42 @@ const fallbackCampaigns: Campaign[] = [
 
 export default function CreatorPage() {
   const [activeTab, setActiveTab] = useState("Discover Campaigns");
+
+  const [creator, setCreator] = useState<Creator | null>(null);
+  const [creatorLoading, setCreatorLoading] = useState(true);
+
   const [campaigns, setCampaigns] =
     useState<Campaign[]>(fallbackCampaigns);
+
   const [search, setSearch] = useState("");
+
   const [selectedCampaign, setSelectedCampaign] =
     useState<Campaign | null>(fallbackCampaigns[0]);
+
   const [appliedIds, setAppliedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadCreator() {
+      try {
+        const response = await fetch("/api/me");
+
+        if (!response.ok) {
+          throw new Error("Failed to load creator");
+        }
+
+        const data = await response.json();
+
+        setCreator(data);
+      } catch (error) {
+        console.error("Failed to load creator:", error);
+      } finally {
+        setCreatorLoading(false);
+      }
+    }
+
+    loadCreator();
+  }, []);
 
   useEffect(() => {
     async function loadCampaigns() {
@@ -82,7 +124,10 @@ export default function CreatorPage() {
         if (Array.isArray(data) && data.length > 0) {
           setCampaigns(data);
           setSelectedCampaign(data[0]);
-        } else if (Array.isArray(data.campaigns) && data.campaigns.length > 0) {
+        } else if (
+          Array.isArray(data.campaigns) &&
+          data.campaigns.length > 0
+        ) {
           setCampaigns(data.campaigns);
           setSelectedCampaign(data.campaigns[0]);
         }
@@ -115,23 +160,52 @@ export default function CreatorPage() {
     );
   }
 
+  const creatorName =
+    creator?.creator?.name ||
+    creator?.name ||
+    "Creator";
+
+  const creatorUsername =
+    creator?.creator?.username || "";
+
+  const creatorEmail =
+    creator?.email || "";
+
+  const creatorFollowers =
+    creator?.creator?.followers ?? 0;
+
+  const creatorInitial =
+    creatorName.charAt(0).toUpperCase() || "C";
+
   return (
     <main className="min-h-screen bg-[#f5f5f3] text-slate-900">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
           <div>
-            <p className="text-lg font-bold tracking-tight">UGC GOAT</p>
-            <p className="text-xs text-slate-500">Creator platform</p>
+            <p className="text-lg font-bold tracking-tight">
+              UGC GOAT
+            </p>
+
+            <p className="text-xs text-slate-500">
+              Creator platform
+            </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium">Creator</p>
-              <p className="text-xs text-slate-500">Creator account</p>
+              <p className="text-sm font-medium">
+                {creatorLoading ? "Loading..." : creatorName}
+              </p>
+
+              <p className="text-xs text-slate-500">
+                {creatorUsername
+                  ? `@${creatorUsername}`
+                  : "Creator account"}
+              </p>
             </div>
 
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-              C
+              {creatorInitial}
             </div>
           </div>
         </div>
@@ -146,7 +220,7 @@ export default function CreatorPage() {
           <div className="mt-2 flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <div>
               <h1 className="text-3xl font-semibold tracking-[-0.05em]">
-                Welcome back.
+                Welcome back{creatorName !== "Creator" ? `, ${creatorName}` : ""}.
               </h1>
 
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
@@ -157,20 +231,33 @@ export default function CreatorPage() {
 
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">Campaigns</p>
-                <p className="mt-1 text-lg font-semibold">{campaigns.length}</p>
+                <p className="text-xs text-slate-500">
+                  Campaigns
+                </p>
+
+                <p className="mt-1 text-lg font-semibold">
+                  {campaigns.length}
+                </p>
               </div>
 
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">Joined</p>
+                <p className="text-xs text-slate-500">
+                  Joined
+                </p>
+
                 <p className="mt-1 text-lg font-semibold">
                   {appliedIds.length}
                 </p>
               </div>
 
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">Status</p>
-                <p className="mt-1 text-lg font-semibold">Active</p>
+                <p className="text-xs text-slate-500">
+                  Status
+                </p>
+
+                <p className="mt-1 text-lg font-semibold">
+                  Active
+                </p>
               </div>
             </div>
           </div>
@@ -204,13 +291,16 @@ export default function CreatorPage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Discover
                     </p>
+
                     <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
                       Available campaigns
                     </h2>
                   </div>
 
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
-                    {loading ? "Loading..." : `${filteredCampaigns.length} live`}
+                    {loading
+                      ? "Loading..."
+                      : `${filteredCampaigns.length} live`}
                   </span>
                 </div>
 
@@ -226,7 +316,8 @@ export default function CreatorPage() {
               <div className="space-y-3 p-4">
                 {filteredCampaigns.map((campaign) => {
                   const applied = appliedIds.includes(campaign.id);
-                  const selected = selectedCampaign?.id === campaign.id;
+                  const selected =
+                    selectedCampaign?.id === campaign.id;
 
                   return (
                     <div
@@ -243,6 +334,7 @@ export default function CreatorPage() {
                           <h3 className="font-semibold tracking-tight">
                             {campaign.name}
                           </h3>
+
                           <p className="mt-1 text-sm text-slate-500">
                             {campaign.brand}
                           </p>
@@ -270,21 +362,30 @@ export default function CreatorPage() {
 
                       <div className="mt-4 grid gap-2 sm:grid-cols-3">
                         <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">Payout</p>
+                          <p className="text-xs text-slate-500">
+                            Payout
+                          </p>
+
                           <p className="mt-1 text-sm font-semibold">
                             {campaign.payoutRate}
                           </p>
                         </div>
 
                         <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">Budget</p>
+                          <p className="text-xs text-slate-500">
+                            Budget
+                          </p>
+
                           <p className="mt-1 text-sm font-semibold">
                             {campaign.totalBudget}
                           </p>
                         </div>
 
                         <div className="rounded-xl bg-slate-100 p-3">
-                          <p className="text-xs text-slate-500">Deadline</p>
+                          <p className="text-xs text-slate-500">
+                            Deadline
+                          </p>
+
                           <p className="mt-1 text-sm font-semibold">
                             {campaign.deadline}
                           </p>
@@ -340,28 +441,40 @@ export default function CreatorPage() {
 
                   <div className="mt-5 space-y-3">
                     <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">Platforms</span>
+                      <span className="text-slate-500">
+                        Platforms
+                      </span>
+
                       <span className="text-right font-medium">
                         {selectedCampaign.platforms.join(", ")}
                       </span>
                     </div>
 
                     <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">Payout</span>
+                      <span className="text-slate-500">
+                        Payout
+                      </span>
+
                       <span className="font-medium">
                         {selectedCampaign.payoutRate}
                       </span>
                     </div>
 
                     <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">T1 requirement</span>
+                      <span className="text-slate-500">
+                        T1 requirement
+                      </span>
+
                       <span className="font-medium">
                         {selectedCampaign.minT1Audience}%+
                       </span>
                     </div>
 
                     <div className="flex justify-between gap-4 text-sm">
-                      <span className="text-slate-500">Deadline</span>
+                      <span className="text-slate-500">
+                        Deadline
+                      </span>
+
                       <span className="font-medium">
                         {selectedCampaign.deadline}
                       </span>
@@ -370,7 +483,9 @@ export default function CreatorPage() {
 
                   <button
                     type="button"
-                    onClick={() => handleApply(selectedCampaign.id)}
+                    onClick={() =>
+                      handleApply(selectedCampaign.id)
+                    }
                     className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-700"
                   >
                     {appliedIds.includes(selectedCampaign.id)
@@ -392,6 +507,7 @@ export default function CreatorPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               My campaigns
             </p>
+
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
               Campaigns you joined
             </h2>
@@ -399,14 +515,19 @@ export default function CreatorPage() {
             <div className="mt-5 space-y-3">
               {appliedIds.length === 0 ? (
                 <div className="rounded-xl bg-slate-50 p-6 text-center">
-                  <p className="font-medium">No campaigns joined yet.</p>
+                  <p className="font-medium">
+                    No campaigns joined yet.
+                  </p>
+
                   <p className="mt-1 text-sm text-slate-500">
                     Discover a campaign and apply to get started.
                   </p>
                 </div>
               ) : (
                 campaigns
-                  .filter((campaign) => appliedIds.includes(campaign.id))
+                  .filter((campaign) =>
+                    appliedIds.includes(campaign.id)
+                  )
                   .map((campaign) => (
                     <div
                       key={campaign.id}
@@ -414,7 +535,10 @@ export default function CreatorPage() {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <h3 className="font-semibold">{campaign.name}</h3>
+                          <h3 className="font-semibold">
+                            {campaign.name}
+                          </h3>
+
                           <p className="mt-1 text-sm text-slate-500">
                             {campaign.brand}
                           </p>
@@ -436,12 +560,16 @@ export default function CreatorPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               My submissions
             </p>
+
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
               Submission history
             </h2>
 
             <div className="mt-6 rounded-xl bg-slate-50 p-8 text-center">
-              <p className="font-medium">No submissions yet</p>
+              <p className="font-medium">
+                No submissions yet
+              </p>
+
               <p className="mt-1 text-sm text-slate-500">
                 Your submitted campaign content will appear here.
               </p>
@@ -454,24 +582,40 @@ export default function CreatorPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Earnings
             </p>
+
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
               Your earnings
             </h2>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">Total earned</p>
-                <p className="mt-2 text-3xl font-semibold">$0</p>
+                <p className="text-sm text-slate-500">
+                  Total earned
+                </p>
+
+                <p className="mt-2 text-3xl font-semibold">
+                  $0
+                </p>
               </div>
 
               <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">Pending</p>
-                <p className="mt-2 text-3xl font-semibold">$0</p>
+                <p className="text-sm text-slate-500">
+                  Pending
+                </p>
+
+                <p className="mt-2 text-3xl font-semibold">
+                  $0
+                </p>
               </div>
 
               <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm text-slate-500">Paid</p>
-                <p className="mt-2 text-3xl font-semibold">$0</p>
+                <p className="text-sm text-slate-500">
+                  Paid
+                </p>
+
+                <p className="mt-2 text-3xl font-semibold">
+                  $0
+                </p>
               </div>
             </div>
           </section>
@@ -489,13 +633,26 @@ export default function CreatorPage() {
 
             <div className="mt-6 flex items-center gap-4">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-xl font-semibold text-white">
-                C
+                {creatorInitial}
               </div>
 
               <div>
-                <h3 className="font-semibold">Creator Account</h3>
+                <h3 className="font-semibold">
+                  {creatorName}
+                </h3>
+
                 <p className="text-sm text-slate-500">
-                  Connect your social accounts and complete your profile.
+                  {creatorUsername
+                    ? `@${creatorUsername}`
+                    : "Creator account"}
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  {creatorEmail}
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  {creatorFollowers.toLocaleString()} followers
                 </p>
               </div>
             </div>
